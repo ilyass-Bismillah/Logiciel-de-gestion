@@ -14,6 +14,9 @@ import {
   Loader2,
   FileWarning,
   Search,
+  Sparkles,
+  ScanText,
+  RefreshCw,
 } from "lucide-react";
 import {
   attachExpenseFileAction,
@@ -32,6 +35,11 @@ import {
   type PreviewFilePayload,
 } from "@/components/shared/file-preview-modal";
 import {
+  parseReceiptOcrText,
+  type OcrExtractedFields,
+} from "@/lib/ocr-parser";
+import {
+  cn,
   formatDateFR,
   formatMAD,
   MOROCCAN_SUPPLIERS_PRESETS,
@@ -78,11 +86,156 @@ export function ExpensesClient({
   const [previewFile, setPreviewFile] =
     React.useState<PreviewFilePayload | null>(null);
 
+  const todayIso = new Date().toISOString().slice(0, 10);
+
   const [supplierName, setSupplierName] = React.useState("");
+  const [expenseDate, setExpenseDate] = React.useState(todayIso);
+  const [category, setCategory] = React.useState<ExpenseCategory>(
+    "Marchandises/Food"
+  );
+  const [amountTtc, setAmountTtc] = React.useState("");
+  const [vatRate, setVatRate] = React.useState("20");
+  const [paymentMethod, setPaymentMethod] = React.useState("Espèces");
+  const [referenceNumber, setReferenceNumber] = React.useState("");
+  const [supplierIce, setSupplierIce] = React.useState("");
+  const [notes, setNotes] = React.useState("");
+
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
   const [localPreviewUrl, setLocalPreviewUrl] = React.useState<string | null>(
     null
   );
+
+  // États OCR Tesseract.js
+  const [ocrStatus, setOcrStatus] = React.useState<
+    "idle" | "scanning" | "done" | "pdf" | "error"
+  >("idle");
+  const [ocrProgress, setOcrProgress] = React.useState(0);
+  const [ocrRawText, setOcrRawText] = React.useState("");
+  const [showRawOcr, setShowRawOcr] = React.useState(false);
+  const [detectedFields, setDetectedFields] = React.useState<
+    Set<OcrExtractedFields["detectedFieldKeys"][number]>
+  >(new Set());
+  const ocrRunIdRef = React.useRef(0);
+
+  const resetFormFields = React.useCallback(() => {
+    ocrRunIdRef.current += 1;
+    setSupplierName("");
+    setExpenseDate(new Date().toISOString().slice(0, 10));
+    setCategory("Marchandises/Food");
+    setAmountTtc("");
+    setVatRate("20");
+    setPaymentMethod("Espèces");
+    setReferenceNumber("");
+    setSupplierIce("");
+    setNotes("");
+    setSelectedFile(null);
+    setOcrStatus("idle");
+    setOcrProgress(0);
+    setOcrRawText("");
+    setShowRawOcr(false);
+    setDetectedFields(new Set());
+  }, []);
+
+  const runOcrScan = React.useCallback(async (file: File) => {
+    const isImage =
+      file.type.startsWith("image/") ||
+      /\.(jpe?g|png|webp|bmp|gif)$/i.test(file.name);
+
+    if (!isImage) {
+      setOcrStatus(
+        file.type === "application/pdf" || /\.pdf$/i.test(file.name)
+          ? "pdf"
+          : "idle"
+      );
+      setOcrProgress(0);
+      setOcrRawText("");
+      setDetectedFields(new Set());
+      return;
+    }
+
+    const runId = ++ocrRunIdRef.current;
+    setOcrStatus("scanning");
+    setOcrProgress(5);
+    setOcrRawText("");
+    setDetectedFields(new Set());
+
+    let worker: Awaited<
+      ReturnType<typeof import("tesseract.js")["createWorker"]>
+    > | null = null;
+
+    try {
+      const { createWorker } = await import("tesseract.js");
+      if (ocrRunIdRef.current !== runId) return;
+
+      worker = await createWorker("fra+eng", 1, {
+        logger: (m) => {
+          if (ocrRunIdRef.current !== runId) return;
+          if (m.status === "recognizing text") {
+            setOcrProgress(Math.max(10, Math.round(m.progress * 100)));
+          } else if (m.status === "loading language traineddata") {
+            setOcrProgress((prev) => Math.max(prev, Math.round(m.progress * 30)));
+          }
+        },
+      });
+
+      if (ocrRunIdRef.current !== runId) return;
+
+      const result = await worker.recognize(file);
+      if (ocrRunIdRef.current !== runId) return;
+
+      const text = result.data.text ?? "";
+      setOcrRawText(text.trim());
+
+      const parsed = parseReceiptOcrText(text);
+      if (parsed.supplierName) setSupplierName(parsed.supplierName);
+      if (parsed.amountTtc) setAmountTtc(parsed.amountTtc);
+      if (parsed.vatRate) setVatRate(parsed.vatRate);
+      if (parsed.expenseDate) setExpenseDate(parsed.expenseDate);
+      if (parsed.supplierIce) setSupplierIce(parsed.supplierIce);
+      if (parsed.referenceNumber) setReferenceNumber(parsed.referenceNumber);
+      if (parsed.category) setCategory(parsed.category);
+
+      setDetectedFields(new Set(parsed.detectedFieldKeys));
+      setOcrProgress(100);
+      setOcrStatus("done");
+
+      if (parsed.detectedFieldKeys.length > 0) {
+        toast.success(
+          `OCR terminé : ${parsed.detectedFieldKeys.length} champ(s) pré-rempli(s).`
+        );
+      } else {
+        toast.info(
+          "Image lue par OCR, veuillez compléter manuellement les champs manquants."
+        );
+      }
+    } catch {
+      if (ocrRunIdRef.current !== runId) return;
+      setOcrStatus("error");
+      toast.error(
+        "L'analyse OCR n'a pas pu lire cette image. Vous pouvez saisir les champs manuellement."
+      );
+    } finally {
+      if (worker) {
+        try {
+          await worker.terminate();
+        } catch {
+          // ignore worker cleanup error
+        }
+      }
+    }
+  }, []);
+
+  const handleFileSelected = (file: File | null) => {
+    setSelectedFile(file);
+    if (file) {
+      void runOcrScan(file);
+    } else {
+      setOcrStatus("idle");
+      setOcrProgress(0);
+      setOcrRawText("");
+      setDetectedFields(new Set());
+    }
+  };
 
   React.useEffect(() => {
     if (!selectedFile || !selectedFile.type.startsWith("image/")) {
@@ -116,14 +269,21 @@ export function ExpensesClient({
     try {
       const formData = new FormData(e.currentTarget);
       formData.set("supplier_name", supplierName);
+      formData.set("expense_date", expenseDate);
+      formData.set("category", category);
+      formData.set("amount_ttc", amountTtc);
+      formData.set("vat_rate", vatRate);
+      formData.set("payment_method", paymentMethod);
+      formData.set("reference_number", referenceNumber);
+      formData.set("supplier_ice", supplierIce);
+      formData.set("notes", notes);
       const res = await createExpenseReceiptAction(formData);
       if (!res.success) {
         toast.error(res.error ?? "Impossible d'enregistrer le justificatif.");
       } else {
         toast.success("Justificatif fournisseur enregistré.");
         setModalOpen(false);
-        setSupplierName("");
-        setSelectedFile(null);
+        resetFormFields();
         router.refresh();
       }
     } finally {
@@ -169,7 +329,22 @@ export function ExpensesClient({
     }
   };
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const fieldHighlightClass = (
+    key: OcrExtractedFields["detectedFieldKeys"][number]
+  ) =>
+    detectedFields.has(key)
+      ? "border-emerald-400 bg-emerald-50/30 ring-2 ring-emerald-500/20"
+      : "";
+
+  const ocrFieldBadge = (
+    key: OcrExtractedFields["detectedFieldKeys"][number]
+  ) =>
+    detectedFields.has(key) ? (
+      <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+        <Sparkles className="h-2.5 w-2.5" />
+        OCR
+      </span>
+    ) : null;
 
   return (
     <div className="space-y-6">
@@ -191,8 +366,7 @@ export function ExpensesClient({
             <Button
               variant="primary"
               onClick={() => {
-                setSupplierName("");
-                setSelectedFile(null);
+                resetFormFields();
                 setModalOpen(true);
               }}
             >
@@ -530,9 +704,12 @@ export function ExpensesClient({
       {/* Modal Ajout Justificatif Mobile-First */}
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          ocrRunIdRef.current += 1;
+          setModalOpen(false);
+        }}
         title="Scanner / Ajouter un justificatif fournisseur"
-        description="Photographiez la facture ou importez un PDF depuis votre appareil."
+        description="Photographiez la facture ou importez une image : l'OCR pré-remplit automatiquement les champs."
       >
         <form onSubmit={handleCreate} className="space-y-4">
           {/* Capture Caméra / Fichier optimisée Mobile */}
@@ -563,7 +740,7 @@ export function ExpensesClient({
                     : "Ouvrir l'appareil photo ou choisir un fichier"}
                 </p>
                 <p className="mt-0.5 text-[11px] text-slate-500">
-                  JPG, PNG, WEBP ou PDF (max 15 Mo)
+                  JPG, PNG, WEBP (analyse OCR auto) ou PDF — max 15 Mo
                 </p>
               </div>
               <input
@@ -573,20 +750,108 @@ export function ExpensesClient({
                 accept="image/*,application/pdf"
                 capture="environment"
                 className="hidden"
-                onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+                onChange={(e) =>
+                  handleFileSelected(e.target.files?.[0] ?? null)
+                }
               />
             </label>
+
+            {/* Statut et progression OCR en direct */}
+            {ocrStatus === "scanning" && (
+              <div className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50/80 p-3">
+                <div className="flex items-center justify-between text-xs font-medium text-indigo-900">
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />
+                    Analyse OCR en cours... {ocrProgress}%
+                  </span>
+                  <span className="font-mono text-[11px] text-indigo-600">
+                    fra+eng
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-indigo-200/70">
+                  <div
+                    style={{ width: `${ocrProgress}%` }}
+                    className="h-full bg-indigo-600 transition-all duration-200"
+                  />
+                </div>
+              </div>
+            )}
+
+            {ocrStatus === "done" && (
+              <div className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                    Extraction OCR terminée — vérifiez les champs pré-remplis
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {ocrRawText && (
+                      <button
+                        type="button"
+                        onClick={() => setShowRawOcr((v) => !v)}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 hover:underline"
+                      >
+                        <ScanText className="h-3 w-3" />
+                        {showRawOcr ? "Masquer texte" : "Voir texte"}
+                      </button>
+                    )}
+                    {selectedFile && (
+                      <button
+                        type="button"
+                        onClick={() => void runOcrScan(selectedFile)}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-700 hover:underline"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        Relancer
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {showRawOcr && ocrRawText && (
+                  <pre className="max-h-28 overflow-auto rounded-lg border border-emerald-200/80 bg-white p-2 font-mono text-[10px] leading-relaxed text-slate-700 whitespace-pre-wrap">
+                    {ocrRawText}
+                  </pre>
+                )}
+              </div>
+            )}
+
+            {ocrStatus === "pdf" && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                Document PDF importé — complétez les champs ci-dessous
+                manuellement.
+              </div>
+            )}
+
+            {ocrStatus === "error" && (
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                <span>
+                  Lecture OCR impossible sur cette image. Saisie manuelle active.
+                </span>
+                {selectedFile && (
+                  <button
+                    type="button"
+                    onClick={() => void runOcrScan(selectedFile)}
+                    className="font-semibold underline"
+                  >
+                    Réessayer
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Fournisseur + suggestions rapides */}
           <div className="space-y-2">
-            <Label htmlFor="supplier_name">Fournisseur *</Label>
+            <Label htmlFor="supplier_name">
+              Fournisseur *{ocrFieldBadge("supplier_name")}
+            </Label>
             <Input
               id="supplier_name"
               required
               placeholder="Ex: Metro Maroc"
               value={supplierName}
               onChange={(e) => setSupplierName(e.target.value)}
+              className={fieldHighlightClass("supplier_name")}
             />
             <div className="flex flex-wrap gap-1.5 pt-0.5">
               {MOROCCAN_SUPPLIERS_PRESETS.slice(0, 6).map((sup) => (
@@ -604,19 +869,31 @@ export function ExpensesClient({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="expense_date">Date de la pièce *</Label>
+              <Label htmlFor="expense_date">
+                Date de la pièce *{ocrFieldBadge("expense_date")}
+              </Label>
               <Input
                 id="expense_date"
                 name="expense_date"
                 type="date"
-                defaultValue={todayIso}
+                value={expenseDate}
+                onChange={(e) => setExpenseDate(e.target.value)}
                 required
+                className={fieldHighlightClass("expense_date")}
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="category">Catégorie *</Label>
-              <Select id="category" name="category" defaultValue="Marchandises/Food">
+              <Label htmlFor="category">
+                Catégorie *{ocrFieldBadge("category")}
+              </Label>
+              <Select
+                id="category"
+                name="category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
+                className={fieldHighlightClass("category")}
+              >
                 {CATEGORIES.map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -626,7 +903,9 @@ export function ExpensesClient({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="amount_ttc">Montant TTC (MAD) *</Label>
+              <Label htmlFor="amount_ttc">
+                Montant TTC (MAD) *{ocrFieldBadge("amount_ttc")}
+              </Label>
               <Input
                 id="amount_ttc"
                 name="amount_ttc"
@@ -635,12 +914,23 @@ export function ExpensesClient({
                 min="0.01"
                 required
                 placeholder="0.00"
+                value={amountTtc}
+                onChange={(e) => setAmountTtc(e.target.value)}
+                className={cn("tabular-nums", fieldHighlightClass("amount_ttc"))}
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="vat_rate">Taux de TVA (%)</Label>
-              <Select id="vat_rate" name="vat_rate" defaultValue="20">
+              <Label htmlFor="vat_rate">
+                Taux de TVA (%){ocrFieldBadge("vat_rate")}
+              </Label>
+              <Select
+                id="vat_rate"
+                name="vat_rate"
+                value={vatRate}
+                onChange={(e) => setVatRate(e.target.value)}
+                className={fieldHighlightClass("vat_rate")}
+              >
                 <option value="20">20% (Standard / Boissons)</option>
                 <option value="14">14% (Énergie / Transport)</option>
                 <option value="10">10% (Restauration / Eau)</option>
@@ -654,7 +944,8 @@ export function ExpensesClient({
               <Select
                 id="payment_method"
                 name="payment_method"
-                defaultValue="Espèces"
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
               >
                 <option value="Espèces">Espèces</option>
                 <option value="Virement">Virement</option>
@@ -664,22 +955,31 @@ export function ExpensesClient({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="reference_number">N° Facture / BL</Label>
+              <Label htmlFor="reference_number">
+                N° Facture / BL{ocrFieldBadge("reference_number")}
+              </Label>
               <Input
                 id="reference_number"
                 name="reference_number"
                 placeholder="Ex: BL-2026-4412"
+                value={referenceNumber}
+                onChange={(e) => setReferenceNumber(e.target.value)}
+                className={fieldHighlightClass("reference_number")}
               />
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="supplier_ice">ICE Fournisseur (optionnel)</Label>
+              <Label htmlFor="supplier_ice">
+                ICE Fournisseur (optionnel){ocrFieldBadge("supplier_ice")}
+              </Label>
               <Input
                 id="supplier_ice"
                 name="supplier_ice"
                 maxLength={15}
                 placeholder="15 chiffres"
-                className="font-mono"
+                value={supplierIce}
+                onChange={(e) => setSupplierIce(e.target.value)}
+                className={cn("font-mono", fieldHighlightClass("supplier_ice"))}
               />
             </div>
           </div>
@@ -691,6 +991,8 @@ export function ExpensesClient({
               name="notes"
               rows={2}
               placeholder="Détail des marchandises ou remarque pour le comptable..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
             />
           </div>
 
@@ -698,11 +1000,18 @@ export function ExpensesClient({
             <Button
               type="button"
               variant="outline"
-              onClick={() => setModalOpen(false)}
+              onClick={() => {
+                ocrRunIdRef.current += 1;
+                setModalOpen(false);
+              }}
             >
               Annuler
             </Button>
-            <Button type="submit" variant="primary" disabled={submitting}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={submitting || ocrStatus === "scanning"}
+            >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
