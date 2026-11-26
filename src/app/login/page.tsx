@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { UtensilsCrossed, CheckCircle2 } from "lucide-react";
 import { getOptionalAuthContext } from "@/lib/auth";
-import { isSupabaseConfigured, RESTAURANT_DEFAULT_INFO } from "@/lib/utils";
+import { RESTAURANT_DEFAULT_INFO } from "@/lib/utils";
 import { LoginForm } from "@/components/auth/login-form";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +11,6 @@ export default async function LoginPage() {
   if (ctx) {
     redirect("/");
   }
-
-  const supabaseReady = isSupabaseConfigured();
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
@@ -96,7 +94,7 @@ export default async function LoginPage() {
               </p>
             </div>
 
-            <LoginForm supabaseReady={supabaseReady} />
+            <LoginForm />
           </div>
 
           <p className="text-center text-[11px] text-slate-400">

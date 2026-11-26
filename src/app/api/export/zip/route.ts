@@ -1,12 +1,11 @@
-import fs from "node:fs";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
-import { getOptionalAuthContext } from "@/lib/auth";
+import { getOptionalAuthContext, shouldUseSupabase } from "@/lib/auth";
 import { getMonthlyOverviewData } from "@/lib/data-service";
-import { DEMO_FILES_DIR } from "@/lib/demo-store";
+import { readDemoUploadedFile } from "@/lib/demo-store";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured, sanitizeFilenameSegment } from "@/lib/utils";
+import { sanitizeFilenameSegment } from "@/lib/utils";
 
 function buildDemoSvgBuffer(title: string, subtitle: string, amount: string) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
@@ -39,17 +38,30 @@ export async function GET(request: NextRequest) {
   const depensesFolder = zip.folder("01_Factures_Fournisseurs");
   const ticketsZFolder = zip.folder("02_Tickets_Z_Caisse");
 
-  const supabase = isSupabaseConfigured()
+  const supabase = (await shouldUseSupabase())
     ? await createServerSupabaseClient()
     : null;
 
   // 1. Justificatifs Fournisseurs
+  const usedNames = new Set<string>();
+  const uniqueZipName = (base: string, ext: string) => {
+    let candidate = `${base}${ext}`;
+    let idx = 2;
+    while (usedNames.has(candidate)) {
+      candidate = `${base}_${idx}${ext}`;
+      idx += 1;
+    }
+    usedNames.add(candidate);
+    return candidate;
+  };
+
   for (const exp of overview.expenses) {
     if (!exp.file_path) continue;
     const ext = path.extname(exp.file_name || exp.file_path || ".jpg") || ".jpg";
-    const cleanName = `${exp.expense_date}_${sanitizeFilenameSegment(
+    const baseName = `${exp.expense_date}_${sanitizeFilenameSegment(
       exp.supplier_name
-    )}_${Math.round(Number(exp.amount_ttc))}MAD${ext}`;
+    )}_${Math.round(Number(exp.amount_ttc))}MAD`;
+    const cleanName = uniqueZipName(baseName, ext);
 
     if (supabase) {
       const { data: blob } = await supabase.storage
@@ -60,9 +72,9 @@ export async function GET(request: NextRequest) {
         depensesFolder?.file(cleanName, arrBuf);
       }
     } else if (exp.file_path.startsWith("local/")) {
-      const diskPath = path.join(DEMO_FILES_DIR, path.basename(exp.file_path));
-      if (fs.existsSync(diskPath)) {
-        depensesFolder?.file(cleanName, fs.readFileSync(diskPath));
+      const stored = readDemoUploadedFile(path.basename(exp.file_path));
+      if (stored) {
+        depensesFolder?.file(cleanName, stored.buffer);
       }
     } else {
       depensesFolder?.file(
@@ -92,12 +104,9 @@ export async function GET(request: NextRequest) {
         ticketsZFolder?.file(cleanName, arrBuf);
       }
     } else if (reg.z_ticket_path.startsWith("local/")) {
-      const diskPath = path.join(
-        DEMO_FILES_DIR,
-        path.basename(reg.z_ticket_path)
-      );
-      if (fs.existsSync(diskPath)) {
-        ticketsZFolder?.file(cleanName, fs.readFileSync(diskPath));
+      const stored = readDemoUploadedFile(path.basename(reg.z_ticket_path));
+      if (stored) {
+        ticketsZFolder?.file(cleanName, stored.buffer);
       }
     } else {
       ticketsZFolder?.file(

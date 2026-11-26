@@ -1,12 +1,11 @@
 "use server";
 
-import fs from "node:fs";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
-import { getPermissions, requireAuthContext } from "@/lib/auth";
+import { getPermissions, requireAuthContext, shouldUseSupabase } from "@/lib/auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { DEMO_FILES_DIR, readDemoDb, writeDemoDb } from "@/lib/demo-store";
-import { isSupabaseConfigured, sanitizeFilenameSegment } from "@/lib/utils";
+import { readDemoDb, saveDemoUploadedFile, writeDemoDb } from "@/lib/demo-store";
+import { sanitizeFilenameSegment } from "@/lib/utils";
 import { cashRegisterSchema } from "@/lib/validations";
 import type { DailyCashRegister } from "@/types/database";
 
@@ -56,7 +55,7 @@ export async function upsertCashRegisterAction(
   let uploadedPath: string | null = null;
   let uploadedName: string | null = null;
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     const existingIdx = parsed.data.id
       ? db.cashRegisters.findIndex((r) => r.id === parsed.data.id)
@@ -76,12 +75,10 @@ export async function upsertCashRegisterAction(
     }
 
     if (file && file.size > 0) {
-      fs.mkdirSync(DEMO_FILES_DIR, { recursive: true });
       const ext = path.extname(file.name) || ".jpg";
       const safeName = `${parsed.data.register_date}_TicketZ_Tylias${ext}`;
-      const diskPath = path.join(DEMO_FILES_DIR, safeName);
       const buf = Buffer.from(await file.arrayBuffer());
-      fs.writeFileSync(diskPath, buf);
+      saveDemoUploadedFile(safeName, buf, file.type || "application/octet-stream");
       uploadedPath = `local/${safeName}`;
       uploadedName = file.name;
     }
@@ -236,7 +233,7 @@ export async function validateCashRegisterAction(
     };
   }
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     const target = db.cashRegisters.find((r) => r.id === id);
     if (!target) return { success: false, error: "État de caisse introuvable." };
@@ -279,7 +276,7 @@ export async function deleteCashRegisterAction(
     return { success: false, error: "Accès refusé." };
   }
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     const target = db.cashRegisters.find((r) => r.id === id);
     if (!target) return { success: false, error: "État de caisse introuvable." };

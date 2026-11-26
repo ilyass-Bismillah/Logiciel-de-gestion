@@ -517,6 +517,14 @@ export function ExpensesClient({
             </Card>
           );
         })}
+
+        {filtered.length === 0 && (
+          <Card>
+            <CardContent className="p-8 text-center text-xs text-slate-500">
+              Aucun justificatif fournisseur pour cette sélection.
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Modal Ajout Justificatif Mobile-First */}

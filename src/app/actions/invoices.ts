@@ -1,11 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getPermissions, requireAuthContext } from "@/lib/auth";
+import { getPermissions, requireAuthContext, shouldUseSupabase } from "@/lib/auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getNextInvoiceNumber } from "@/lib/data-service";
 import { readDemoDb, writeDemoDb } from "@/lib/demo-store";
-import { isSupabaseConfigured } from "@/lib/utils";
 import { clientInvoiceSchema } from "@/lib/validations";
 import type { ClientInvoice, InvoiceStatus } from "@/types/database";
 
@@ -56,7 +55,7 @@ export async function saveClientInvoiceAction(
       ? data.invoice_number.trim()
       : await getNextInvoiceNumber(year);
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     const now = new Date().toISOString();
     const existingIdx = data.id
@@ -152,7 +151,7 @@ export async function updateInvoiceStatusAction(
     return { success: false, error: "Action réservée à l'Admin / Gérant." };
   }
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     const inv = db.invoices.find((i) => i.id === id);
     if (!inv) return { success: false, error: "Facture introuvable." };
@@ -193,7 +192,7 @@ export async function deleteInvoiceAction(
     return { success: false, error: "Action réservée à l'Admin / Gérant." };
   }
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     db.invoices = db.invoices.filter((i) => i.id !== id);
     writeDemoDb(db);

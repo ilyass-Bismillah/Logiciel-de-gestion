@@ -12,15 +12,27 @@ export interface AuthContext {
   isDemoMode: boolean;
 }
 
+export async function isDemoSessionActive(): Promise<boolean> {
+  const cookieStore = await cookies();
+  const demoRole = cookieStore.get(DEMO_COOKIE_NAME)?.value;
+  return (
+    demoRole === "admin" ||
+    demoRole === "manager" ||
+    demoRole === "accountant"
+  );
+}
+
+export async function shouldUseSupabase(): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+  return !(await isDemoSessionActive());
+}
+
 export async function getOptionalAuthContext(): Promise<AuthContext | null> {
-  if (!isSupabaseConfigured()) {
-    const cookieStore = await cookies();
-    const demoRole = cookieStore.get(DEMO_COOKIE_NAME)?.value as
-      | UserRole
-      | undefined;
-    if (!demoRole || !["admin", "manager", "accountant"].includes(demoRole)) {
-      return null;
-    }
+  const cookieStore = await cookies();
+  const demoRole = cookieStore.get(DEMO_COOKIE_NAME)?.value as
+    | UserRole
+    | undefined;
+  if (demoRole && ["admin", "manager", "accountant"].includes(demoRole)) {
     const profile = getDemoProfileByRole(demoRole);
     return {
       userId: profile.id,
@@ -28,6 +40,10 @@ export async function getOptionalAuthContext(): Promise<AuthContext | null> {
       profile,
       isDemoMode: true,
     };
+  }
+
+  if (!isSupabaseConfigured()) {
+    return null;
   }
 
   const supabase = await createServerSupabaseClient();

@@ -2,10 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { getPermissions, requireAuthContext } from "@/lib/auth";
+import { getPermissions, requireAuthContext, shouldUseSupabase } from "@/lib/auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { readDemoDb, writeDemoDb } from "@/lib/demo-store";
-import { isSupabaseConfigured } from "@/lib/utils";
 import { userRoleUpdateSchema } from "@/lib/validations";
 import type { UserRole } from "@/types/database";
 
@@ -29,7 +28,7 @@ export async function updateUserRoleAction(input: {
     return { success: false, error: "Paramètres invalides." };
   }
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     const profile = db.profiles.find((p) => p.id === parsed.data.userId);
     if (!profile) return { success: false, error: "Utilisateur introuvable." };
@@ -82,7 +81,7 @@ export async function createTeamMemberAction(formData: FormData): Promise<{
     };
   }
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     if (db.profiles.some((p) => p.email.toLowerCase() === email)) {
       return { success: false, error: "Cet e-mail existe déjà." };

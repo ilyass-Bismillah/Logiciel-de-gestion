@@ -21,6 +21,45 @@ interface DemoDatabase {
 const STORE_FILE = path.join(os.tmpdir(), "tylias-demo-v1.json");
 export const DEMO_FILES_DIR = path.join(os.tmpdir(), "tylias-files");
 
+const globalStore = globalThis as unknown as {
+  __tyliasDemoDb?: DemoDatabase;
+  __tyliasDemoFiles?: Map<string, { data: string; mime: string }>;
+};
+
+export function saveDemoUploadedFile(
+  safeName: string,
+  buffer: Buffer,
+  mime: string
+): void {
+  if (!globalStore.__tyliasDemoFiles) {
+    globalStore.__tyliasDemoFiles = new Map();
+  }
+  globalStore.__tyliasDemoFiles.set(safeName, {
+    data: buffer.toString("base64"),
+    mime,
+  });
+  try {
+    fs.mkdirSync(DEMO_FILES_DIR, { recursive: true });
+    fs.writeFileSync(path.join(DEMO_FILES_DIR, safeName), buffer);
+  } catch {
+    // Fallback to in-memory store on read-only filesystems
+  }
+}
+
+export function readDemoUploadedFile(
+  safeName: string
+): { buffer: Buffer; mime?: string } | null {
+  const mem = globalStore.__tyliasDemoFiles?.get(safeName);
+  if (mem) {
+    return { buffer: Buffer.from(mem.data, "base64"), mime: mem.mime };
+  }
+  const diskPath = path.join(DEMO_FILES_DIR, safeName);
+  if (fs.existsSync(diskPath)) {
+    return { buffer: fs.readFileSync(diskPath) };
+  }
+  return null;
+}
+
 function isoDateDaysAgo(daysAgo: number): string {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
@@ -372,10 +411,15 @@ function createInitialData(): DemoDatabase {
 }
 
 export function readDemoDb(): DemoDatabase {
+  if (globalStore.__tyliasDemoDb) {
+    return globalStore.__tyliasDemoDb;
+  }
   try {
     if (fs.existsSync(STORE_FILE)) {
       const raw = fs.readFileSync(STORE_FILE, "utf8");
-      return JSON.parse(raw) as DemoDatabase;
+      const parsed = JSON.parse(raw) as DemoDatabase;
+      globalStore.__tyliasDemoDb = parsed;
+      return parsed;
     }
   } catch {
     // Recreate on parse error
@@ -386,6 +430,7 @@ export function readDemoDb(): DemoDatabase {
 }
 
 export function writeDemoDb(db: DemoDatabase): void {
+  globalStore.__tyliasDemoDb = db;
   try {
     fs.writeFileSync(STORE_FILE, JSON.stringify(db, null, 2), "utf8");
   } catch {

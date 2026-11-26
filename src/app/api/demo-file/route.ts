@@ -1,12 +1,11 @@
-import fs from "node:fs";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
-import { getOptionalAuthContext } from "@/lib/auth";
-import { DEMO_FILES_DIR, readDemoDb } from "@/lib/demo-store";
-import { formatMAD, isSupabaseConfigured } from "@/lib/utils";
+import { getOptionalAuthContext, shouldUseSupabase } from "@/lib/auth";
+import { readDemoDb, readDemoUploadedFile } from "@/lib/demo-store";
+import { formatMAD } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
-  if (isSupabaseConfigured()) {
+  if (await shouldUseSupabase()) {
     return NextResponse.json({ error: "Indisponible en production." }, { status: 404 });
   }
 
@@ -21,21 +20,21 @@ export async function GET(request: NextRequest) {
   if (type === "local") {
     const rawName = searchParams.get("name") ?? "";
     const safeName = path.basename(rawName);
-    const fullPath = path.join(DEMO_FILES_DIR, safeName);
-    if (!fs.existsSync(fullPath)) {
+    const stored = readDemoUploadedFile(safeName);
+    if (!stored) {
       return NextResponse.json({ error: "Fichier introuvable." }, { status: 404 });
     }
     const ext = path.extname(safeName).toLowerCase();
     const mime =
-      ext === ".pdf"
+      stored.mime ||
+      (ext === ".pdf"
         ? "application/pdf"
         : ext === ".png"
         ? "image/png"
         : ext === ".webp"
         ? "image/webp"
-        : "image/jpeg";
-    const bytes = fs.readFileSync(fullPath);
-    return new NextResponse(bytes, {
+        : "image/jpeg");
+    return new NextResponse(new Uint8Array(stored.buffer), {
       status: 200,
       headers: { "Content-Type": mime, "Cache-Control": "no-store" },
     });

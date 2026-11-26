@@ -19,21 +19,23 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Mode démonstration uniquement lorsque Supabase n'est pas encore configuré
-  if (!isSupabaseConfigured()) {
-    const demoRole = request.cookies.get(DEMO_COOKIE_NAME)?.value;
-    const hasDemoSession =
-      demoRole === "admin" || demoRole === "manager" || demoRole === "accountant";
+  const demoRole = request.cookies.get(DEMO_COOKIE_NAME)?.value;
+  const hasDemoSession =
+    demoRole === "admin" || demoRole === "manager" || demoRole === "accountant";
 
-    if (!hasDemoSession && !isPublicPath(pathname)) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/login";
-      return NextResponse.redirect(url);
-    }
-
-    if (hasDemoSession && pathname === "/login") {
+  if (hasDemoSession) {
+    if (pathname === "/login") {
       const url = request.nextUrl.clone();
       url.pathname = "/";
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next();
+  }
+
+  if (!isSupabaseConfigured()) {
+    if (!isPublicPath(pathname)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
       return NextResponse.redirect(url);
     }
 

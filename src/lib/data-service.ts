@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { shouldUseSupabase } from "@/lib/auth";
 import { readDemoDb } from "@/lib/demo-store";
-import { getMonthDateRange, isSupabaseConfigured } from "@/lib/utils";
+import { getMonthDateRange } from "@/lib/utils";
 import type {
   ClientInvoice,
   DailyCashRegister,
@@ -13,7 +14,7 @@ export async function listCashRegisters(filters?: {
   month?: number;
   status?: string;
 }): Promise<DailyCashRegister[]> {
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     return db.cashRegisters
       .filter((r) => {
@@ -68,7 +69,7 @@ export async function listClientInvoices(filters?: {
   month?: number;
   status?: string;
 }): Promise<ClientInvoice[]> {
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     return db.invoices
       .filter((inv) => {
@@ -106,7 +107,7 @@ export async function listClientInvoices(filters?: {
 export async function getClientInvoiceById(
   id: string
 ): Promise<ClientInvoice | null> {
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     return db.invoices.find((i) => i.id === id) ?? null;
   }
@@ -124,7 +125,7 @@ export async function getClientInvoiceById(
 
 export async function getNextInvoiceNumber(year = new Date().getFullYear()): Promise<string> {
   const prefix = `FAC-${year}-`;
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     const nums = db.invoices
       .filter((i) => i.invoice_number.startsWith(prefix))
@@ -160,7 +161,7 @@ export async function listExpenseReceipts(filters?: {
   month?: number;
   category?: string;
 }): Promise<ExpenseReceipt[]> {
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     return db.expenses
       .filter((e) => {
@@ -214,7 +215,7 @@ export async function listExpenseReceipts(filters?: {
 }
 
 export async function listTeamProfiles(): Promise<Profile[]> {
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     return readDemoDb().profiles;
   }
 

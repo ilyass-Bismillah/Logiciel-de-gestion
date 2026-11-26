@@ -1,12 +1,11 @@
 "use server";
 
-import fs from "node:fs";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
-import { getPermissions, requireAuthContext } from "@/lib/auth";
+import { getPermissions, requireAuthContext, shouldUseSupabase } from "@/lib/auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { DEMO_FILES_DIR, readDemoDb, writeDemoDb } from "@/lib/demo-store";
-import { isSupabaseConfigured, sanitizeFilenameSegment } from "@/lib/utils";
+import { readDemoDb, saveDemoUploadedFile, writeDemoDb } from "@/lib/demo-store";
+import { sanitizeFilenameSegment } from "@/lib/utils";
 import { expenseReceiptSchema } from "@/lib/validations";
 import type { ExpenseReceipt } from "@/types/database";
 
@@ -52,16 +51,14 @@ export async function createExpenseReceiptAction(formData: FormData): Promise<{
   let uploadedName: string | null = null;
   let uploadedMime: string | null = null;
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     if (file && file.size > 0) {
-      fs.mkdirSync(DEMO_FILES_DIR, { recursive: true });
       const ext = path.extname(file.name) || ".jpg";
       const safeName = `${parsed.data.expense_date}_${sanitizeFilenameSegment(
         parsed.data.supplier_name
       )}_${Math.round(parsed.data.amount_ttc)}MAD_${Date.now()}${ext}`;
-      const diskPath = path.join(DEMO_FILES_DIR, safeName);
       const buf = Buffer.from(await file.arrayBuffer());
-      fs.writeFileSync(diskPath, buf);
+      saveDemoUploadedFile(safeName, buf, file.type || "application/octet-stream");
       uploadedPath = `local/${safeName}`;
       uploadedName = file.name;
       uploadedMime = file.type || "application/octet-stream";
@@ -175,19 +172,19 @@ export async function attachExpenseFileAction(
     return { success: false, error: "Veuillez sélectionner un fichier." };
   }
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     const target = db.expenses.find((e) => e.id === id);
     if (!target) return { success: false, error: "Dépense introuvable." };
 
-    fs.mkdirSync(DEMO_FILES_DIR, { recursive: true });
     const ext = path.extname(file.name) || ".jpg";
     const safeName = `${target.expense_date}_${sanitizeFilenameSegment(
       target.supplier_name
     )}_${Date.now()}${ext}`;
-    fs.writeFileSync(
-      path.join(DEMO_FILES_DIR, safeName),
-      Buffer.from(await file.arrayBuffer())
+    saveDemoUploadedFile(
+      safeName,
+      Buffer.from(await file.arrayBuffer()),
+      file.type || "application/octet-stream"
     );
     target.file_path = `local/${safeName}`;
     target.file_name = file.name;
@@ -259,7 +256,7 @@ export async function validateExpenseReceiptAction(
     };
   }
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     const item = db.expenses.find((e) => e.id === id);
     if (!item) return { success: false, error: "Dépense introuvable." };
@@ -296,7 +293,7 @@ export async function deleteExpenseReceiptAction(
     return { success: false, error: "Accès refusé." };
   }
 
-  if (!isSupabaseConfigured()) {
+  if (!(await shouldUseSupabase())) {
     const db = readDemoDb();
     const target = db.expenses.find((e) => e.id === id);
     if (!target) return { success: false, error: "Justificatif introuvable." };

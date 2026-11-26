@@ -494,6 +494,18 @@ export function InvoicesClient({
                     Modifier
                   </Button>
                 )}
+                {canManage && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDelete(inv)}
+                    className="text-red-600"
+                    aria-label="Supprimer"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

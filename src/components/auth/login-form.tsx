@@ -24,7 +24,7 @@ import type { UserRole } from "@/types/database";
 
 const initialState: AuthActionResult = {};
 
-export function LoginForm({ supabaseReady }: { supabaseReady: boolean }) {
+export function LoginForm() {
   const [state, formAction, isPending] = useActionState(
     signInWithEmail,
     initialState
@@ -65,6 +65,7 @@ export function LoginForm({ supabaseReady }: { supabaseReady: boolean }) {
               type="email"
               autoComplete="email"
               required
+              defaultValue="gerant@tylias.ma"
               placeholder="gerant@tylias.ma"
               className="pl-9"
               disabled={isPending}
@@ -87,6 +88,7 @@ export function LoginForm({ supabaseReady }: { supabaseReady: boolean }) {
               type={showPassword ? "text" : "password"}
               autoComplete="current-password"
               required
+              defaultValue="tylias2026"
               placeholder="••••••••"
               className="pl-9 pr-10"
               disabled={isPending}
@@ -128,83 +130,81 @@ export function LoginForm({ supabaseReady }: { supabaseReady: boolean }) {
         </Button>
       </form>
 
-      {!supabaseReady && (
-        <div className="space-y-3 rounded-xl border border-indigo-200/80 bg-indigo-50/50 p-4">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-xs font-semibold text-indigo-950">
-                Accès Démonstration Interactive
-              </p>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-indigo-800/80">
-                Explorez l&apos;ensemble des modules en un clic selon votre profil :
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={demoPending}
-              onClick={() => handleDemo("admin")}
-              className="justify-between border-indigo-200 bg-white hover:bg-indigo-50"
-            >
-              <span className="flex items-center gap-2 font-medium text-slate-800">
-                <ShieldCheck className="h-4 w-4 text-indigo-600" />
-                Gérant / Admin (Karim Bennani)
-              </span>
-              {demoPending && demoRoleLoading === "admin" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />
-              ) : (
-                <span className="text-[11px] text-indigo-600">Accès complet</span>
-              )}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={demoPending}
-              onClick={() => handleDemo("manager")}
-              className="justify-between border-indigo-200 bg-white hover:bg-indigo-50"
-            >
-              <span className="flex items-center gap-2 font-medium text-slate-800">
-                <UserCheck className="h-4 w-4 text-emerald-600" />
-                Caissier / Manager (Salma Idrissi)
-              </span>
-              {demoPending && demoRoleLoading === "manager" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" />
-              ) : (
-                <span className="text-[11px] text-emerald-700">
-                  Caisse &amp; Pièces
-                </span>
-              )}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={demoPending}
-              onClick={() => handleDemo("accountant")}
-              className="justify-between border-indigo-200 bg-white hover:bg-indigo-50"
-            >
-              <span className="flex items-center gap-2 font-medium text-slate-800">
-                <Calculator className="h-4 w-4 text-slate-600" />
-                Comptable (Cabinet Tazi)
-              </span>
-              {demoPending && demoRoleLoading === "accountant" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-600" />
-              ) : (
-                <span className="text-[11px] text-slate-500">
-                  Lecture &amp; Exports
-                </span>
-              )}
-            </Button>
-          </div>
+      <div className="space-y-3 rounded-xl border border-indigo-200/80 bg-indigo-50/50 p-3.5 sm:p-4">
+        <div>
+          <p className="text-xs font-semibold text-indigo-950">
+            Accès Démonstration Interactive
+          </p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-indigo-800/80">
+            Explorez l&apos;ensemble des modules en un clic selon votre profil :
+          </p>
         </div>
-      )}
+
+        <div className="grid grid-cols-1 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={demoPending}
+            onClick={() => handleDemo("admin")}
+            className="h-auto min-h-9 justify-between gap-2 border-indigo-200 bg-white px-3 py-2 text-left hover:bg-indigo-50"
+          >
+            <span className="flex min-w-0 items-center gap-2 font-medium text-slate-800">
+              <ShieldCheck className="h-4 w-4 shrink-0 text-indigo-600" />
+              <span className="truncate">Gérant / Admin</span>
+            </span>
+            {demoPending && demoRoleLoading === "admin" ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-indigo-600" />
+            ) : (
+              <span className="shrink-0 text-[11px] font-medium text-indigo-600">
+                Accès complet
+              </span>
+            )}
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={demoPending}
+            onClick={() => handleDemo("manager")}
+            className="h-auto min-h-9 justify-between gap-2 border-indigo-200 bg-white px-3 py-2 text-left hover:bg-indigo-50"
+          >
+            <span className="flex min-w-0 items-center gap-2 font-medium text-slate-800">
+              <UserCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span className="truncate">Caissier / Manager</span>
+            </span>
+            {demoPending && demoRoleLoading === "manager" ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-emerald-600" />
+            ) : (
+              <span className="shrink-0 text-[11px] font-medium text-emerald-700">
+                Caisse &amp; Pièces
+              </span>
+            )}
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={demoPending}
+            onClick={() => handleDemo("accountant")}
+            className="h-auto min-h-9 justify-between gap-2 border-indigo-200 bg-white px-3 py-2 text-left hover:bg-indigo-50"
+          >
+            <span className="flex min-w-0 items-center gap-2 font-medium text-slate-800">
+              <Calculator className="h-4 w-4 shrink-0 text-slate-600" />
+              <span className="truncate">Comptable</span>
+            </span>
+            {demoPending && demoRoleLoading === "accountant" ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-slate-600" />
+            ) : (
+              <span className="shrink-0 text-[11px] font-medium text-slate-500">
+                Lecture &amp; Exports
+              </span>
+            )}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
